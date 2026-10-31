@@ -1,0 +1,199 @@
+rules_version = '2';
+service cloud.firestore {
+ match /databases/{database}/documents {
+  function signedIn() { return request.auth != null; }
+  function superadmin() { return signedIn() && get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data.get('rol','alumno') == 'superadmin' && get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data.get('activo',true) != false; }
+  function email() { return request.auth.token.email.lower(); }
+  function grant(kind,k) { return signedIn() && request.auth.token.email_verified == true && exists(/databases/$(database)/documents/$(kind)/$(email())) && get(/databases/$(database)/documents/$(kind)/$(email())).data.kioskId == k; }
+  function membership(k) { return get(/databases/$(database)/documents/kiosks/$(k)/members/$(request.auth.uid)).data; }
+  function member(k) { return signedIn() && exists(/databases/$(database)/documents/kiosks/$(k)/members/$(request.auth.uid)); }
+  function staff(k) { return (member(k) && membership(k).role in ['owner','staff'] && !membership(k).get('disabled',false)) || superadmin(); }
+  function owner(k) { return (member(k) && membership(k).role == 'owner' && !membership(k).get('disabled',false)) || superadmin(); }
+  function student(k) { let m=membership(k); return signedIn() && m.role == 'student' && !m.get('disabled',false); }
+  function profileValid(uid) {
+    let d=request.resource.data;
+    return signedIn() && uid == request.auth.uid && d.email.lower() == email() && d.rol in ['alumno','kioskero','empleado']
+      && d.keys().hasOnly(['email','rol','kioskId','kioskIds'])
+      && getAfter(/databases/$(database)/documents/kiosks/$(d.kioskId)/members/$(uid)).data.role in ['student','owner','staff'];
+  }
+  match /usuarios/{uid} {
+   allow get: if signedIn() && (uid == request.auth.uid || superadmin());
+   allow list: if superadmin();
+   allow create: if superadmin() || profileValid(uid);
+   allow update: if superadmin() || (profileValid(uid) && resource.data.get('rol','alumno') != 'superadmin' && resource.data.get('activo',true) != false && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['email','rol','kioskId','kioskIds']));
+  }
+  match /clients/{k} { allow read,write: if superadmin(); }
+  match /ownerEmails/{mail} { allow get: if superadmin() || (signedIn() && email() == mail); allow list,write: if superadmin(); }
+  match /staffEmails/{mail} {
+    allow get: if (signedIn() && email() == mail) || (resource != null && owner(resource.data.kioskId)) || superadmin();
+    allow list: if superadmin();
+    allow create: if owner(request.resource.data.kioskId) && request.resource.data.email == mail;
+    allow update: if owner(resource.data.kioskId) && request.resource.data.kioskId == resource.data.kioskId && request.resource.data.email == mail;
+    allow delete: if owner(resource.data.kioskId);
+  }
+  match /schoolCodes/{code} {
+    allow get: if true;
+    allow list,create,delete: if superadmin();
+    allow update: if superadmin() || (owner(resource.data.kioskId) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name','school']));
+  }
+  match /kiosks/{k} {
+    function kiosk() { return get(/databases/$(database)/documents/kiosks/$(k)).data; }
+    function afterKiosk() { return getAfter(/databases/$(database)/documents/kiosks/$(k)).data; }
+    function order(oid) { return getAfter(/databases/$(database)/documents/kiosks/$(k)/orders/$(oid)).data; }
+    function oldOrder(oid) { return get(/databases/$(database)/documents/kiosks/$(k)/orders/$(oid)).data; }
+    function newOrder(oid) { return !exists(/databases/$(database)/documents/kiosks/$(k)/orders/$(oid)); }
+    function balanceAfter(uid) { return getAfter(/databases/$(database)/documents/kiosks/$(k)/members/$(uid)).data; }
+    function counterDelta() {
+      let d=request.resource.data;
+      let pid=d.lastProductId;
+      let before=exists(/databases/$(database)/documents/kiosks/$(k)/products/$(pid)) && get(/databases/$(database)/documents/kiosks/$(k)/products/$(pid)).data.active;
+      let after=existsAfter(/databases/$(database)/documents/kiosks/$(k)/products/$(pid)) && getAfter(/databases/$(database)/documents/kiosks/$(k)/products/$(pid)).data.active;
+      return d.diff(resource.data).affectedKeys().hasOnly(['productCount','lastProductId']) && d.productCount == resource.data.productCount + (after ? 1 : 0) - (before ? 1 : 0) && d.productCount >= 0 && d.productCount <= resource.data.limits.products;
+    }
+    function imageDelta() {
+      let d=request.resource.data;
+      let iid=d.lastImageId;
+      let before=exists(/databases/$(database)/documents/kiosks/$(k)/images/$(iid));
+      let after=existsAfter(/databases/$(database)/documents/kiosks/$(k)/images/$(iid));
+      return d.diff(resource.data).affectedKeys().hasOnly(['imageCount','lastImageId']) && before != after && d.imageCount == resource.data.imageCount + (after ? 1 : -1) && d.imageCount >= 0 && d.imageCount <= resource.data.limits.images;
+    }
+    allow get: if signedIn();
+    allow list,create,delete: if superadmin();
+    allow update: if superadmin()
+      || (owner(k) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name','school','notice','paused','maxUnits','preparationEnabled','deliveryEnabled','slots','updatedAt']))
+      || (staff(k) && (counterDelta() || imageDelta()))
+      || (grant('ownerEmails',k) && !resource.data.get('closed',false) && resource.data.get('ownerUid',request.auth.uid) == request.auth.uid && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['ownerUid']) && request.resource.data.ownerUid == request.auth.uid);
+    match /members/{uid} {
+      function initial() {
+        let d=request.resource.data;
+        return signedIn() && uid == request.auth.uid && d.balance == 0 && d.email.lower() == email()
+         && d.keys().hasOnly(['name','email','balance','course','role','schoolCode','createdAt']) && !kiosk().closed && (
+          (d.role == 'student' && get(/databases/$(database)/documents/schoolCodes/$(d.schoolCode)).data.kioskId == k)
+          || (d.role == 'owner' && grant('ownerEmails',k) && kiosk().get('ownerUid',request.auth.uid) == request.auth.uid)
+          || (d.role == 'staff' && grant('staffEmails',k)));
+      }
+      function ownWallet() {
+        let d=request.resource.data;
+        let o=order(d.lastOrderId);
+        let buying=d.lastWalletAction == 'purchase';
+        let ledger=getAfter(/databases/$(database)/documents/kiosks/$(k)/movements/$(buying ? d.lastOrderId : 'refund-' + d.lastOrderId)).data;
+        return signedIn() && uid == request.auth.uid && d.diff(resource.data).affectedKeys().hasOnly(['balance','lastOrderId','lastWalletAction','pendingOrders'])
+          && d.balance is int && d.balance >= 0 && o.studentId == uid && o.total > 0
+          && ((buying && newOrder(d.lastOrderId) && d.balance == resource.data.balance - o.total && d.get('pendingOrders',0) == resource.data.get('pendingOrders',0) + (o.channel == 'counter' ? 0 : 1))
+           || (!buying && d.lastWalletAction == 'cancel' && oldOrder(d.lastOrderId).status == 'received' && o.status == 'cancelled' && d.balance == resource.data.balance + o.total && d.pendingOrders == resource.data.get('pendingOrders',0) - 1))
+          && ledger.userId == uid && ledger.amount == (buying ? -o.total : o.total) && ledger.balanceAfter == d.balance;
+      }
+      allow get: if (signedIn() && uid == request.auth.uid) || staff(k);
+      allow list: if staff(k);
+      allow create: if initial();
+      allow update: if ownWallet() || (staff(k) && resource.data.role == 'student' && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['balance','disabled','pendingOrders','lastOrderId','lastWalletAction']) && request.resource.data.balance is int && request.resource.data.balance >= 0);
+      allow delete: if owner(k) && resource.data.role == 'staff';
+    }
+    match /products/{pid} {
+      function stockChange() {
+        let d=request.resource.data;
+        let o=order(d.lastOrderId);
+        let buying=d.lastStockAction == 'purchase';
+        let l=o.itemMap[pid];
+        let prev=l.index == 0 ? {'runningTotal':0,'runningUnits':0,'runningPrepared':0} : o.items[l.index-1];
+        return signedIn() && l.index is int && l.index >= 0 && l.index < o.items.size() && o.items[l.index] == l && l.runningTotal == prev.runningTotal + l.qty*l.price && l.runningUnits == prev.runningUnits + l.qty && l.runningPrepared == prev.runningPrepared + (l.prepared ? l.qty : 0) && (!buying || (l.price == resource.data.price && l.prepared == resource.data.prepared && l.cancellable == (o.channel == 'counter' ? false : resource.data.cancellable) && resource.data.active)) && (buying || l.cancellable) && d.diff(resource.data).affectedKeys().hasOnly(['stock','lastOrderId','lastStockAction']) && o.studentId == request.auth.uid && o.itemMap[pid].qty is int && o.itemMap[pid].qty > 0 && d.stock >= 0
+          && ((buying && newOrder(d.lastOrderId) && d.stock == resource.data.stock - o.itemMap[pid].qty)
+          || (!buying && d.lastStockAction == 'cancel' && oldOrder(d.lastOrderId).status == 'received' && o.status == 'cancelled' && d.stock == resource.data.stock + o.itemMap[pid].qty));
+      }
+      function quota(delta) { return afterKiosk().lastProductId == pid && afterKiosk().productCount == kiosk().productCount + delta; }
+      allow read: if member(k) || superadmin();
+      allow create: if staff(k) && request.resource.data.stock is int && request.resource.data.stock >= 0 && request.resource.data.price is int && request.resource.data.price > 0 && quota(request.resource.data.active ? 1 : 0);
+      allow update: if stockChange() || (staff(k) && request.resource.data.stock is int && request.resource.data.stock >= 0 && request.resource.data.price is int && request.resource.data.price > 0 && (request.resource.data.active == resource.data.active || quota(request.resource.data.active ? 1 : -1)));
+      allow delete: if staff(k) && (!resource.data.active || quota(-1));
+    }
+    function lineOK(o,oid,n,buying) {
+      let l=o.items[n];
+      let p=getAfter(/databases/$(database)/documents/kiosks/$(k)/products/$(l.productId)).data;
+      return o.itemMap[l.productId] == l && p.lastOrderId == oid && p.lastStockAction == (buying ? 'purchase' : 'cancel');
+    }
+    function linesOK(o,oid,buying) {
+      return o.items is list && o.items.size() > 0 && o.items.size() <= 5 && o.itemMap.keys().size() == o.items.size()
+        && lineOK(o,oid,0,buying)
+        && (o.items.size() < 2 || lineOK(o,oid,1,buying))
+        && (o.items.size() < 3 || lineOK(o,oid,2,buying))
+        && (o.items.size() < 4 || lineOK(o,oid,3,buying))
+        && (o.items.size() < 5 || lineOK(o,oid,4,buying));
+    }
+    function cost(o,n) { return o.items.size() <= n ? 0 : o.items[n].qty * o.items[n].price; }
+    function units(o,n,prepared) { return o.items.size() <= n ? 0 : (prepared && !o.items[n].prepared ? 0 : o.items[n].qty); }
+    function day(o) { return timestamp.date(int(o.date[0:4]),int(o.date[5:7]),int(o.date[8:10])); }
+    function deadline(o) {
+      let s=kiosk().slots[o.slotIndex];
+      return day(o) + duration.value(int(s.time[0:2])+3,'h') + duration.value(int(s.time[3:5])-s.cutoffMinutes,'m');
+    }
+    function capacityAfter(o) { return getAfter(/databases/$(database)/documents/kiosks/$(k)/capacity/$(o.date + '_' + o.slotId)).data; }
+    function capacityOK(o,oid) {
+      let c=capacityAfter(o);
+      let s=kiosk().slots[o.slotIndex];
+      return c.lastOrderId == oid && c.orders > 0 && c.orders <= s.maxOrders && c.prepared >= 0 && c.prepared <= s.maxPrepared && o.slotId == s.id && request.time < deadline(o)
+        && day(o) >= (request.time - duration.value(3,'h')).date() && day(o) <= (request.time - duration.value(3,'h')).date() + duration.value(7,'d');
+    }
+    match /orders/{oid} {
+      function purchase() {
+        let o=request.resource.data;
+        let m=balanceAfter(request.auth.uid);
+        return student(k) && !kiosk().closed && o.studentId == request.auth.uid && o.createdAt == request.time && o.total is int && o.total > 0 && o.total == o.items[o.items.size()-1].runningTotal
+          && o.units == o.items[o.items.size()-1].runningUnits
+          && m.lastOrderId == oid && m.lastWalletAction == 'purchase' && m.balance >= 0 && linesOK(o,oid,true)
+          && ((o.channel == 'preorder' && !kiosk().paused && o.status == 'received' && o.units <= kiosk().maxUnits && o.prepared == o.items[o.items.size()-1].runningPrepared && o.delivery in (kiosk().deliveryEnabled ? ['pickup','classroom'] : ['pickup']) && capacityOK(o,oid))
+          || (o.channel == 'counter' && o.status == 'delivered' && oid == 'pos-' + o.saleId && getAfter(/databases/$(database)/documents/kiosks/$(k)/counterSales/$(o.saleId)).data.studentId == request.auth.uid && getAfter(/databases/$(database)/documents/kiosks/$(k)/counterSales/$(o.saleId)).data.status == 'paid' && getAfter(/databases/$(database)/documents/kiosks/$(k)/counterSales/$(o.saleId)).data.total == o.total));
+      }
+      function cancel() {
+        let o=request.resource.data;
+        let m=balanceAfter(request.auth.uid);
+        return student(k) && resource.data.studentId == request.auth.uid && resource.data.status == 'received' && o.status == 'cancelled' && o.channel == 'preorder' && request.time < deadline(o) && o.cancelledBy == request.auth.uid && o.cancelledAt == request.time
+          && o.diff(resource.data).affectedKeys().hasOnly(['status','cancelReason','cancelledBy','cancelledAt']) && linesOK(o,oid,false) && m.lastOrderId == oid && m.lastWalletAction == 'cancel' && capacityAfter(o).lastOrderId == oid;
+      }
+      allow get: if staff(k) || (member(k) && (resource == null || resource.data.studentId == request.auth.uid));
+      allow list: if staff(k) || (member(k) && resource.data.studentId == request.auth.uid);
+      allow create: if purchase();
+      allow update: if cancel() || (staff(k) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','cancelReason','cancelledBy','cancelledAt','updatedAt','updatedBy']));
+    }
+    match /capacity/{cid} {
+      function valid() {
+        let d=request.resource.data;
+        let o=order(d.lastOrderId);
+        let buying=newOrder(d.lastOrderId);
+        return signedIn() && o.studentId == request.auth.uid && o.channel == 'preorder' && cid == o.date + '_' + o.slotId
+          && d.orders == (resource == null ? 0 : resource.data.orders) + (buying ? 1 : -1)
+          && d.prepared == (resource == null ? 0 : resource.data.prepared) + (buying ? o.prepared : -o.prepared)
+          && (buying || (oldOrder(d.lastOrderId).status == 'received' && o.status == 'cancelled'));
+      }
+      allow read: if member(k) || superadmin();
+      allow create,update: if valid() || staff(k);
+    }
+    match /counterSales/{sid} {
+      allow get: if member(k) || superadmin();
+      allow list,create: if staff(k);
+      allow update: if staff(k) || (student(k) && resource.data.status == 'pending' && resource.data.expiresAt > request.time.toMillis() && request.resource.data.status == 'paid' && request.resource.data.studentId == request.auth.uid && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','studentId','studentName','paidAt']) && newOrder('pos-'+sid) && order('pos-'+sid).total == resource.data.total && balanceAfter(request.auth.uid).lastOrderId == 'pos-'+sid);
+    }
+    match /movements/{mid} {
+      function ownRecord() {
+        let d=request.resource.data;
+        let o=order(d.orderId);
+        return signedIn() && d.userId == request.auth.uid && o.studentId == request.auth.uid && d.balanceAfter == balanceAfter(request.auth.uid).balance && d.createdAt == request.time
+          && ((d.type == 'purchase' && mid == d.orderId && newOrder(d.orderId) && d.amount == -o.total)
+           || (d.type == 'refund' && mid == 'refund-'+d.orderId && oldOrder(d.orderId).status == 'received' && o.status == 'cancelled' && d.amount == o.total));
+      }
+      allow read: if staff(k) || (member(k) && resource.data.userId == request.auth.uid);
+      allow create: if ownRecord() || staff(k);
+    }
+    match /topups/{tid} { allow read: if staff(k); allow create: if staff(k); }
+    match /cashouts/{cid} { allow read: if owner(k); allow create: if owner(k); }
+    match /audit/{aid} { allow read,create: if staff(k); }
+    match /imageTokens/{iid} { allow read,create,update,delete: if staff(k); }
+    match /images/{iid} {
+      allow read: if member(k) || superadmin();
+      allow create: if staff(k) && request.resource.data.status == 'pending' && afterKiosk().lastImageId == iid && afterKiosk().imageCount == kiosk().imageCount + 1;
+      allow update: if staff(k) && request.resource.data.status in ['pending','active','deleting'];
+      allow delete: if staff(k) && resource.data.status == 'deleting' && afterKiosk().lastImageId == iid && afterKiosk().imageCount == kiosk().imageCount - 1 && (superadmin() || !resource.data.keys().hasAny(['publicId']) || get(/databases/$(database)/documents/kiosks/$(k)/imageTokens/$(iid)).data.expiresAt > request.time.toMillis());
+    }
+  }
+  match /{document=**} { allow read,write: if false; }
+ }
+}

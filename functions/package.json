@@ -1,0 +1,1 @@
+{"name":"recreo-functions","private":true,"type":"module","main":"index.mjs","engines":{"node":"22"},"dependencies":{"firebase-admin":"^13.0.0","firebase-functions":"^6.0.0","cloudinary":"^2.0.0"}}
