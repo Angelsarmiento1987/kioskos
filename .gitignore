@@ -10,3 +10,12 @@ firebase-debug.log
 build/
 functions/.env.*
 *.log
+
+# Android local configuration and signing
+android/.gradle/
+android/local.properties
+android/**/build/
+android/keystore.properties
+android/app/google-services.json
+*.jks
+*.keystore

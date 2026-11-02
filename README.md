@@ -1,59 +1,67 @@
-# reKreo · React + Firebase + Cloudinary
+# reKreo · proyecto único para web y Android
 
-Aplicación web para kioskos escolares. React 19 con Webpack; sin Vite, servidor propio ni Firebase Functions. Auth autentica, el SDK web hace CRUD y transacciones en Firestore, y Cloudinary aloja las imágenes.
+React + Capacitor 8 + Firebase Auth/Firestore + Cloudinary. El código de pantallas y lógica está en `src/`; Android Studio empaqueta su compilación desde `android/`. No se agrega un servidor propio ni Firebase Functions.
 
-## Iniciar en VS Code
+## Incorporar esta actualización
 
-1. Abrir esta carpeta, no `src`.
-2. Ejecutar `npm install`.
-3. El archivo `.env.local` entregado ya contiene la configuración pública de tu proyecto Firebase. Conservá tus valores si ya lo modificaste.
-4. En Firebase → Firestore Database → Reglas, copiar **todo** `firestore.rules` y pulsar **Publicar**. Las reglas anteriores bloqueaban las escrituras directas y no sirven para esta versión.
-5. Ejecutar `npm start` y abrir **http://localhost:3000**. El panel de plataforma está en **http://localhost:3000/superadmin**.
+1. Hacé una copia de seguridad de tu proyecto web actual.
+2. Copiá el contenido de `rekreo-react/` de este ZIP **dentro de la carpeta original**, donde está `package.json`. Conservá la carpeta `.git` de tu original: el ZIP no incluye otra historia de Git.
+3. El antiguo archivo `src/demo.js` puede eliminarse si queda de la versión anterior: ya no se importa ni forma parte de la aplicación. Los fixtures de prueba están en `tests/fixtures/`.
+4. Desde esa carpeta ejecutá:
 
-No hace falta desplegar Functions ni habilitar Blaze por esta implementación. Firebase y Cloudinary conservan sus propios límites y planes. No se incluyen credenciales administrativas en el navegador. `firebase-admin` es una dependencia de desarrollo usada solo para preparar datos de prueba en emuladores.
+   ```sh
+   npm install
+   npm run android:sync
+   ```
 
-## Superadministrador y alta
+5. Abrí Android Studio con:
 
-Seguí `INICIO-SUPERADMIN.md` para el documento `usuarios/{UID}` con `rol: "superadmin"`. Desde ese panel podés crear un kiosko y autorizar el email de su dueño. El alta guarda, en una sola transacción, kiosko, ficha privada, código público y autorización del correo. El dueño se registra con ese correo y lo verifica. Los alumnos se registran libremente y se unen con el código de su escuela.
+   ```sh
+   npm run android:open
+   ```
 
-El kiosko maneja productos, stock, pedidos, cargas de saldo, cobros por QR, devoluciones excepcionales, galería, equipo y reportes. El superadministrador tiene ficha privada, planes, límites y acceso a estadísticas por kiosko. El nombre público se puede modificar sin alterar la referencia interna del cliente.
+La carpeta Android se incorporó desde la que enviaste y conserva el paquete `com.websinvueltas.rekreo`, el plugin de Google/QR y `android/app/google-services.json`. No hace falta volver a registrar otra app en Firebase ni crear otra base. `android:config` extrae el OAuth correcto del JSON antes de compilar React.
 
-## Operaciones con crédito
+No se incluyen `local.properties`, `.gradle`, `.idea`, claves de firma ni carpetas de compilación de tu PC. Android Studio vuelve a crear su configuración local. Usá JDK 21 y Android SDK 36; mantené las mismas claves de firma que utilices para publicar. Para actualizar sobre el APK de prueba instalado, compilá en tu misma PC con su `debug.keystore` habitual.
 
-La carga registra dinero recibido fuera de la app (efectivo o transferencia verificada por el kiosko). Las compras consumen crédito y no vuelven a sumar efectivo a la caja. Los importes se almacenan en centavos enteros. Transacciones y reglas vinculan compra, saldo, stock, cupo y movimiento. Los alumnos no pueden editar libremente su saldo ni asignarse permisos.
+## Trabajo diario
 
-Máximo **5 productos distintos por compra**, para mantener la validación atómica dentro de los límites de lectura de las reglas de Firestore. El límite de unidades se configura aparte. La concurrencia se resuelve con transacciones: si dos alumnos compran la última unidad, solo uno puede completar la compra. Las solicitudes financieras conservan identificadores para evitar duplicados.
+| Acción | Comando |
+| --- | --- |
+| Probar web en localhost:3000 | `npm start` |
+| Actualizar web de GitHub Pages | `npm run deploy` |
+| Pasar cambios de React al proyecto Android | `npm run android:sync` |
+| Abrir Android Studio | `npm run android:open` |
+| Pruebas de lógica | `npm test` |
+| Pruebas con Firestore/Auth emulados | `npm run test:firestore` |
 
-Las cancelaciones del alumno se permiten solo para productos cancelables y dentro del plazo. El kioskero puede cancelar y reintegrar crédito. Las devoluciones de dinero registran lo entregado fuera de la app; se bloquean con pedidos pendientes. El sistema no transfiere dinero por sí mismo.
+Ahora modificás React una sola vez. La web y Android conservan formas de publicación diferentes: subir la web no cambia el código del APK instalado. Para Android hay que sincronizar, generar una nueva compilación y distribuirla por Play. Los datos de Firebase/Cloudinary se comparten sin recompilar.
 
-## Imágenes
+GitHub Pages conserva la URL pública `https://angelsarmiento1987.github.io/kioskos/` y el acceso `/kioskos/superadmin/`. Al contratar un dominio, cambiá `REACT_APP_PUBLIC_APP_URL` en `.env.local` y recompilá. No se cambió el sistema de compilación del proyecto: sigue React con Webpack, sin Vite.
 
-Ver `CONFIGURACION.md`: configurar cloud name y preset **unsigned** restringido a WebP; el límite de 100 KB se controla en la app. Las fotos se comprimen en el navegador y una sola foto sirve para varias variantes. El límite de fotos es independiente del límite de productos.
+## Cambios incluidos
 
-**Limitación sin backend:** Cloudinary permite borrar desde el navegador con un token temporal, por unos minutos. Después, la app marca el borrado pendiente y mantiene el cupo ocupado. El superadministrador elimina el archivo desde Cloudinary y confirma en la galería del kiosko para liberar cupo. Nunca colocar el API Secret en React. La reserva no garantiza por sí sola el límite real de una cuenta Cloudinary: el preset público debe restringirse y el administrador debe revisar su consumo.
+- Capacitor dentro del proyecto original, con Google nativo, lectura QR, Atrás y compartir archivos.
+- Eliminados los accesos, cambio de roles, banner y reinicio de demostración. Las sesiones locales de la demo anterior no se restauran; el acceso siempre depende de Firebase Auth y las autorizaciones de Firestore.
+- **Sacar foto** y **Elegir archivo** al crear/editar productos y en la galería. Android abre la cámara del teléfono; la web usa la cámara del navegador con permiso desde HTTPS o localhost.
+- La foto se comprime a WebP de hasta 100 KB, se guarda en la galería del kiosko y se selecciona para el producto sin salir del formulario. Reutilizarla no ocupa otro lugar; subir una nueva sí. La reserva y el límite se validan también en Firestore.
+- Cancelar la cámara no sube archivos. Una foto que ya terminó de subirse permanece en la galería aunque canceles el producto, para reutilizarla después.
+- Ante cierre del proceso Android mientras está la cámara abierta, se conserva una referencia a la foto recuperada; el mismo usuario/kiosko puede pulsar **Usar foto recuperada** al volver a un formulario o a la galería. Los campos del formulario no se restauran si el sistema cerró todo el proceso. Si el archivo temporal fue eliminado por Android, habrá que tomar otra foto.
 
-## Verificación
+## Fotos y permisos
 
-- `npm test`: lógica compartida, flujos de acceso y demostración.
-- `npm run build`: salida estática en `build/`.
-- `npm run test:firestore`: pruebas integradas con Auth y Firestore emulados, nunca con tu proyecto real. Necesita Java compatible con Firebase CLI. Prueba el SDK cliente con las reglas reales; el Admin SDK solo prepara usuarios y comprueba los resultados.
+La cámara nativa no guarda fotos en la galería personal del teléfono (`saveToGallery: false`) ni solicita permisos generales de almacenamiento. La web pide permiso para cámara y no pide micrófono. Si el navegador rechaza la cámara o el dispositivo no la tiene, se puede elegir un archivo.
 
-No se accedió a tu consola de Firebase ni se publicaron sus reglas desde este entorno. La verificación local no reemplaza una prueba real en tu proyecto después de publicar las reglas. Cloudinary necesita tus datos públicos; no se ha probado una subida real sin ellos.
+La galería mantiene el manejo existente de borrados de Cloudinary: fuera de la ventana del token temporal, el borrado queda pendiente y el superadmin debe eliminar el archivo en Cloudinary y confirmarlo antes de liberar cupo. Nunca pongas el API Secret de Cloudinary en React.
 
-## Estructura
+## Firebase, saldo e imágenes
 
-- `src/firestore-operations.js`: acciones que ejecuta el navegador.
-- `src/firestore-client.js`: referencias y transacciones del SDK público.
-- `shared/`: validación y cálculos compartidos con la demostración y las pruebas.
-- `firestore.rules`: permisos y validación de escrituras directas.
-- `src/images.js`: compresión y carga unsigned a Cloudinary.
+Se conservan las reglas y las transacciones existentes. `INICIO-SUPERADMIN.md` explica la autorización en `usuarios/{UID}`. Elegir kioskero no otorga permisos: hay que tener el correo previamente autorizado. No se publicaron reglas ni se modificaron datos reales desde esta actualización.
 
-Para otro hosting estático, ejecutar el build y configurar fallback de rutas a `index.html`; se incluye también `superadmin/index.html`. El panel y el catálogo son responsivos. La app Android y publicación en Play Store quedan para la etapa siguiente. No hay integración con Mercado Pago ni facturación ARCA en esta versión.
+Las cargas registran dinero recibido fuera de la app. Las compras descuentan saldo, stock y cupo con transacciones; no vuelven a sumar efectivo a caja. Máximo 5 productos distintos por compra, además de los límites de unidades configurados. Los permisos se validan en `firestore.rules`.
 
-## QR de retiro de pedidos
+`.env.local` y `google-services.json` contienen configuración pública de Firebase/Cloudinary, no una cuenta de servicio ni claves de firma. Están excluidos de Git para que conserves su configuración local; el ZIP los incluye para mantener lo que ya configuraste. No se necesitan credenciales administrativas en el navegador.
 
-Cada pedido pendiente muestra su QR y código escrito en Mis pedidos y al confirmar la compra. El kioskero abre Pedidos → Escanear pedido; puede usar la cámara o ingresar el código. El QR identifica kiosko y pedido: no carga saldo ni confirma la entrega. La app consulta el estado actual y muestra aviso si está entregado, cancelado o no retirado; no ofrece volver a entregarlo. Confirmar la entrega requiere pulsar Marcar entregado. Una búsqueda por código ambiguo pide el QR exacto.
+## Estado de verificación y publicación
 
-La cámara requiere permiso y HTTPS o localhost. El QR de la cuenta es distinto y se usa en Alumnos y cargas. Esta mejora utiliza las reglas existentes; no necesita Functions ni reglas adicionales.
-
-Cloudinary: activar **Return delete token** en el preset (Advanced). Ese parámetro no se envía en la solicitud unsigned. Un rechazo explícito de la subida libera su reserva; ante fallos de red o resultados inciertos se mantiene el cupo hasta revisar el proveedor.
+Ver `VERIFICACION.md`. Antes de vender/publicar falta probar esta actualización en el teléfono (especialmente la nueva cámara) y completar firma, ficha, privacidad, eliminación de cuentas y revisión de Play. Quitar la demostración no completa esos trámites.

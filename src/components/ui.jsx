@@ -1,3 +1,4 @@
+import { saveOrShare } from "../native";
 import React, { useEffect, useRef } from "react";
 import { X, Store, ShoppingBag } from "lucide-react";
 export const fmt = (n) =>
@@ -106,12 +107,11 @@ export function Placeholder({ title, children }) {
   );
 }
 export function downloadFile(name, content, type) {
-  const a = document.createElement("a"),
-    url = URL.createObjectURL(new Blob([content], { type }));
-  a.href = url;
-  a.download = name;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  // Existing callers are event handlers; consume rejection and surface it in the app.
+  return saveOrShare(name, content, type).catch((error) => {
+    if (/cancel/i.test(error.message || "")) return;
+    window.dispatchEvent(new CustomEvent("rekreo:file-error", { detail: error.message || "No se pudo compartir el archivo." }));
+  });
 }
 export function exportCSV(name, rows) {
   const quote = (v) =>

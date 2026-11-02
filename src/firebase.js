@@ -22,7 +22,7 @@ const operations = app ? createFirestoreOperations(db, auth) : null;
 export async function call(name, data = {}) {
   if (!operations)
     throw new Error(
-      "Conectá Firebase para usar cuentas reales. Podés explorar la demo.",
+      "Falta configurar la conexión a Firebase. Contactá al administrador.",
     );
   let timer;
   try {

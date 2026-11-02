@@ -1,3 +1,5 @@
+import { isAndroid } from "../native";
+import NativeQrButton from "./NativeQrButton";
 import React, { useEffect, useRef, useState } from "react";
 import { Modal } from "./ui";
 
@@ -31,6 +33,7 @@ export default function OrderScanner({ onValue, onClose }) {
       scanner,
       lastValue;
     mounted.current = true;
+    if (isAndroid) return () => { mounted.current = false; };
     (async () => {
       try {
         const { Html5Qrcode } = await import("html5-qrcode");
@@ -67,7 +70,7 @@ export default function OrderScanner({ onValue, onClose }) {
         Apuntá al QR que muestra el alumno en Mis pedidos. Se abrirá el detalle;
         la entrega se confirma después.
       </p>
-      <div id="order-camera-reader" />
+      {isAndroid ? <NativeQrButton onValue={(text) => { setValue(text); return lookup.current(text); }} /> : <div id="order-camera-reader" />}
       {cameraError && <p className="hint">{cameraError}</p>}
       <form
         onSubmit={(event) => {

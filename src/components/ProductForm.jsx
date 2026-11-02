@@ -1,3 +1,4 @@
+import PhotoInput from "./PhotoInput";
 import React, { useState } from "react";
 import { Image, Check, Trash2 } from "lucide-react";
 import { Modal } from "./ui";
@@ -5,6 +6,9 @@ export default function ProductForm({
   product,
   images = [],
   busy,
+  imageLimit = 100,
+  photoContext,
+  onUploadPhoto,
   onClose,
   onSave,
   onGallery,
@@ -26,17 +30,20 @@ export default function ProductForm({
       imageId: "",
     },
   );
+  const [uploading, setUploading] = useState(false), [uploaded, setUploaded] = useState([]);
+  const mergedImages = [...images, ...uploaded.filter((i) => !images.some((x) => x.id === i.id))];
+  const close = () => { if (!uploading && !busy) onClose(); };
   const set = (key, v) => setP((p) => ({ ...p, [key]: v }));
   return (
     <Modal
-      title={product ? "Editar producto" : "Nuevo producto"}
-      onClose={onClose}
+      title={product?.id ? "Editar producto" : "Nuevo producto"}
+      onClose={close}
       wide
     >
       <form
         onSubmit={(e) => {
           e.preventDefault();
-          onSave(p);
+          if (!uploading && !busy) onSave(p);
         }}
       >
         <div className="form-row">
@@ -102,6 +109,14 @@ export default function ProductForm({
         <div className="form-section-title">
           Imagen del producto · no consume cupo al reutilizar
         </div>
+        <PhotoInput context={photoContext} disabled={busy || mergedImages.length >= imageLimit} onBusyChange={setUploading}
+          onFile={async (file) => {
+            const image = await onUploadPhoto(file);
+            setUploaded((current) => [...current, image]);
+            setP((current) => ({ ...current, galleryId: image.id, imageUrl: image.url, imageId: image.publicId }));
+          }} />
+        <p className="hint">{mergedImages.length} / {imageLimit} fotos ocupadas. Las fotos nuevas quedan en la galería aunque canceles el producto. Podés reutilizar una foto sin ocupar otro lugar.</p>
+        {p.imageUrl && <img className="selected-product-photo" src={p.imageUrl} alt="Foto seleccionada para el producto" />}
         <div className="gallery-picker">
           <button
             type="button"
@@ -113,7 +128,7 @@ export default function ProductForm({
             <span className="picker-emoji">{p.emoji}</span>
             <small>Sin foto</small>
           </button>
-          {images
+          {mergedImages
             .filter((i) => !i.status || i.status === "active")
             .map((i) => (
               <button
@@ -135,7 +150,7 @@ export default function ProductForm({
               </button>
             ))}
         </div>
-        <button className="text-button" type="button" onClick={onGallery}>
+        <button className="text-button" type="button" disabled={busy || uploading} onClick={onGallery}>
           <Image size={15} />
           Ir a la galería para subir una foto
         </button>
@@ -195,21 +210,22 @@ export default function ProductForm({
           </span>
         </label>
         <div className="modal-actions">
-          {product && (
+          {product?.id && (
             <button
               type="button"
               className="text-button danger"
+              disabled={busy || uploading}
               onClick={onDelete}
             >
               <Trash2 size={15} />
               Eliminar producto
             </button>
           )}
-          <button type="button" className="button secondary" onClick={onClose}>
+          <button type="button" className="button secondary" disabled={busy || uploading} onClick={close}>
             Cancelar
           </button>
-          <button className="button primary" disabled={busy}>
-            {busy ? "Guardando…" : "Guardar producto"}
+          <button className="button primary" disabled={busy || uploading}>
+            {uploading ? "Procesando foto…" : busy ? "Guardando…" : "Guardar producto"}
           </button>
         </div>
       </form>

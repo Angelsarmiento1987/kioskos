@@ -54,6 +54,10 @@ test("unsigned upload sends supported fields only and finalizes returned delete 
     },
   });
   assert.equal(result.id, "image-1");
+  assert.equal(result.url, asset.secure_url);
+  assert.equal(result.publicId, asset.public_id);
+  assert.equal(result.status, "active");
+  assert.equal(result.delete_token, undefined);
   assert.equal(ops.actions[1].name, "finalizeImage");
   assert.equal(ops.actions[1].data.asset.delete_token, "temporary-fixture");
   assert.equal(ops.actions.length, 2);

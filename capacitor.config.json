@@ -1,0 +1,15 @@
+{
+  "appId": "com.websinvueltas.rekreo",
+  "appName": "reKreo",
+  "webDir": "build",
+  "server": {
+    "androidScheme": "https",
+    "hostname": "localhost"
+  },
+  "android": {
+    "allowMixedContent": false,
+    "webContentsDebuggingEnabled": false,
+    "backgroundColor": "#123d32",
+    "insetsHandling": "native"
+  }
+}

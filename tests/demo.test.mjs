@@ -13,7 +13,7 @@ globalThis.localStorage = {
 };
 globalThis.window = { dispatchEvent() {} };
 const { getDemo, demoAction, demoSnapshot, resetDemo } = await import(
-  "../src/demo.js"
+  "./fixtures/demo.js"
 );
 const owner = {
     uid: "staff-1",

@@ -1,3 +1,4 @@
+import PhotoInput from "../components/PhotoInput";
 import React, { useState } from "react";
 import {
   ImagePlus,
@@ -8,7 +9,7 @@ import {
   ArrowRight,
 } from "lucide-react";
 import { Modal, Placeholder } from "../components/ui";
-import { compressImage, dataUrl, uploadImage } from "../images";
+import { compressImage, uploadImage } from "../images";
 export default function Gallery({ data, session, action, notify, onProducts }) {
   const [search, setSearch] = useState(""),
     [uploading, setUploading] = useState(false),
@@ -17,27 +18,16 @@ export default function Gallery({ data, session, action, notify, onProducts }) {
   const images = data.images || [],
     limit = data.kiosk?.limits?.images ?? 100,
     stored = images.length;
-  async function upload(e) {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  async function upload(file) {
     setUploading(true);
     try {
       const blob = await compressImage(file);
-      if (session.mode === "demo")
-        await action(
-          "saveImage",
-          { url: await dataUrl(blob), name: file.name, bytes: blob.size },
-          "Imagen guardada en tu galería",
-        );
-      else {
-        await uploadImage(blob, file.name, session.kioskId);
-        notify("Imagen guardada en tu galería");
-      }
+      await uploadImage(blob, file.name, session.kioskId);
+      notify("Imagen guardada en tu galería");
     } catch (e) {
-      notify(e.message, true);
+      throw e;
     } finally {
       setUploading(false);
-      e.target.value = "";
     }
   }
   return (
@@ -76,26 +66,8 @@ export default function Gallery({ data, session, action, notify, onProducts }) {
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
-        <label
-          className={
-            "button primary upload-label " +
-            (stored >= limit ? "is-disabled" : "")
-          }
-        >
-          <ImagePlus size={18} />
-          {uploading
-            ? "Comprimiendo y subiendo…"
-            : stored >= limit
-              ? "Cupo completo"
-              : "Subir imagen"}
-          <input
-            type="file"
-            hidden
-            accept="image/jpeg,image/png,image/webp"
-            disabled={uploading || stored >= limit}
-            onChange={upload}
-          />
-        </label>
+        <PhotoInput context={`${session.uid}:${session.kioskId}`} disabled={uploading || stored >= limit} onFile={upload} />
+        {stored >= limit && <p className="hint">Cupo de fotos completo</p>}
       </div>
       <div className="image-grid">
         {images
@@ -180,13 +152,11 @@ export default function Gallery({ data, session, action, notify, onProducts }) {
             Los productos seguirán disponibles con su ícono de categoría. El
             cupo se libera cuando se confirma el borrado del archivo.
           </p>
-          {session.mode !== "demo" && (
             <p className="hint">
               Si Cloudinary ya no permite el borrado desde esta app, quedará
               pendiente para reKreo y seguirá ocupando cupo hasta que se elimine
               desde el panel de Cloudinary.
             </p>
-          )}
           {remove.publicId && (
             <p className="hint">
               Archivo en Cloudinary: <code>{remove.publicId}</code>

@@ -358,43 +358,6 @@ small {
 .forgot {
   margin-top: 15px;
 }
-.demo-entry {
-  margin-top: 28px;
-  border-top: 1px solid var(--line);
-  padding-top: 24px;
-}
-.demo-entry > span {
-  font-size: 10px;
-  font-weight: 750;
-  letter-spacing: 1.4px;
-  color: #758772;
-}
-.demo-entry p {
-  font-size: 12px;
-  color: var(--muted);
-  line-height: 1.6;
-  margin: 8px 0 14px;
-}
-.demo-buttons {
-  display: flex;
-  gap: 10px;
-  margin-bottom: 12px;
-}
-.demo-buttons button {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  border: 1px solid var(--line);
-  background: #fafbf7;
-  border-radius: 9px;
-  padding: 11px;
-  flex: 1;
-  font-size: 12px;
-  font-weight: 650;
-}
-.demo-buttons button svg:last-child {
-  margin-left: auto;
-}
 .connection-note {
   font-size: 11px;
   color: #7f897e;
@@ -534,21 +497,6 @@ nav {
   padding: 5px;
   color: #8b9588;
 }
-.demo-switch {
-  padding: 12px 3px 20px;
-}
-.demo-switch span {
-  font-size: 8px;
-  letter-spacing: 1px;
-  font-weight: 700;
-  color: #87917e;
-}
-.demo-switch select {
-  margin-top: 8px;
-  font-size: 11px;
-  padding: 9px;
-  background: #fafbf7;
-}
 .main-shell {
   margin-left: 246px;
   flex: 1;
@@ -593,13 +541,6 @@ nav {
   background: #7eae69;
   border-radius: 50%;
 }
-.connection.demo {
-  color: #96702e;
-  background: #faf1df;
-}
-.connection.demo i {
-  background: #cda353;
-}
 .today {
   display: flex;
   gap: 6px;
@@ -614,30 +555,6 @@ nav {
   padding: 35px 38px 70px;
   max-width: 1680px;
   margin: 0 auto;
-}
-.demo-banner {
-  background: #fbf5e8;
-  border-bottom: 1px solid #eee4cd;
-  color: #9a8050;
-  font-size: 10px;
-  padding: 9px 38px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-.demo-banner span {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-}
-.demo-banner button {
-  border: 0;
-  background: none;
-  text-decoration: underline;
-  color: inherit;
-  white-space: nowrap;
-  font-size: 10px;
 }
 .page-heading {
   display: flex;
@@ -1905,9 +1822,6 @@ code {
   .topbar {
     padding: 0 25px;
   }
-  .demo-banner {
-    padding: 8px 25px;
-  }
   .dashboard-grid {
     grid-template-columns: minmax(0, 1fr) 250px;
     gap: 16px;
@@ -2146,14 +2060,6 @@ code {
   }
   .content {
     padding: 26px 18px 60px;
-  }
-  .demo-banner {
-    padding: 8px 18px;
-    font-size: 9px;
-    line-height: 1.6;
-  }
-  .demo-banner button {
-    font-size: 9px;
   }
   .page-heading {
     margin-bottom: 23px;
@@ -3503,9 +3409,6 @@ td small {
   display: block;
   margin: 17px auto;
 }
-.access-choices + .demo-entry {
-  margin-top: 28px;
-}
 @media (max-width: 700px) {
   .access-choice {
     padding: 20px 15px;
@@ -3600,3 +3503,14 @@ td small {
 }
 
 .form-operation-error { padding: 14px 16px; margin: 16px 0; background: #fff3ef; border: 1px solid #efb3a6; border-radius: 10px; color: #8c3928; font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
+
+/* Native WebView remains inside system bars through Capacitor's native inset handling. */
+html[data-platform="android"] { overscroll-behavior-y: none; }
+html[data-platform="android"] body { overscroll-behavior-y: none; }
+html[data-platform="android"] input,
+html[data-platform="android"] select,
+html[data-platform="android"] textarea { font-size: 16px; }
+
+.photo-input-actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 12px 0; }
+.photo-camera-video { display: block; width: 100%; max-height: 55vh; object-fit: contain; background: #123d32; border-radius: 12px; }
+.selected-product-photo { display: block; width: 140px; height: 140px; object-fit: cover; border-radius: 12px; margin: 12px 0; }

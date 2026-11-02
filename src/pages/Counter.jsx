@@ -1,3 +1,5 @@
+import { isAndroid } from "../native";
+import NativeQrButton from "../components/NativeQrButton";
 import React, { useState, useEffect, useRef } from "react";
 import {
   Search,
@@ -237,10 +239,7 @@ export function StudentPayment({ data, session, action, notify, onClose }) {
       return;
     }
     setLoading(true);
-    let r;
-    if (session.mode === "demo")
-      r = (data.counterSales || []).find((c) => c.id === parts[3]);
-    else r = await action("getCounterSale", { saleId: parts[3] });
+    const r = await action("getCounterSale", { saleId: parts[3] });
     setLoading(false);
     if (!r) {
       notify("Cobro no encontrado.", true);
@@ -337,7 +336,7 @@ function CameraCapture({ onValue }) {
   const [open, setOpen] = useState(false),
     [error, setError] = useState("");
   useEffect(() => {
-    if (!open) return;
+    if (!open || isAndroid) return;
     let scanner,
       cancelled = false;
     async function start() {
@@ -367,6 +366,7 @@ function CameraCapture({ onValue }) {
       if (scanner?.isScanning) scanner.stop().catch(() => {});
     };
   }, [open]);
+  if (isAndroid) return <NativeQrButton onValue={onValue} />;
   return (
     <>
       <button

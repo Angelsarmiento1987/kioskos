@@ -1,3 +1,7 @@
+import { compressImage, uploadImage } from "./images.js";
+import { isAndroid, loginGoogle, linkGoogle, logoutAccount, homeHref } from "./native";
+import NativeQrButton from "./components/NativeQrButton";
+import { useAndroidBack } from "./useAndroidBack";
 import OrderScanner from "./components/OrderScanner";
 import {
   orderQrValue,
@@ -20,7 +24,7 @@ import Platform, { SchoolPoster, KioskForm } from "./pages/Platform";
 import Counter, { StudentPayment } from "./pages/Counter";
 import ProductForm from "./components/ProductForm";
 import Refund from "./components/Refund";
-import { Brand } from "./components/ui";
+import { Brand, downloadFile } from "./components/ui";
 import React, { useState, useEffect, useRef } from "react";
 import {
   LayoutDashboard,
@@ -74,10 +78,7 @@ import {
   updateProfile,
   sendPasswordResetEmail,
   signOut,
-  GoogleAuthProvider,
-  signInWithPopup,
   sendEmailVerification,
-  linkWithPopup,
 } from "firebase/auth";
 import {
   collection,
@@ -89,7 +90,6 @@ import {
   getDocFromServer,
 } from "firebase/firestore";
 import { auth, db, configured, call } from "./firebase";
-import { demoSnapshot, demoAction, resetDemo } from "./demo";
 import { localDate, slotDeadline } from "../shared/domain.mjs";
 const fmt = (n) =>
   new Intl.NumberFormat("es-AR", {
@@ -173,6 +173,7 @@ function Modal({ title, children, onClose, wide = false }) {
     <dialog
       ref={ref}
       className={wide ? "modal wide" : "modal"}
+      onCancel={(e) => { e.preventDefault(); onClose(); }}
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
@@ -190,6 +191,7 @@ function Modal({ title, children, onClose, wide = false }) {
 function Scanner({ onValue, onClose }) {
   const [error, setError] = useState("");
   useEffect(() => {
+    if (isAndroid) return;
     let scanner,
       stopped = false;
     const start = async () => {
@@ -224,7 +226,7 @@ function Scanner({ onValue, onClose }) {
   }, []);
   return (
     <Modal title="Escanear credencial" onClose={onClose}>
-      <div id="camera-reader" />
+      {isAndroid ? <NativeQrButton onValue={onValue} /> : <div id="camera-reader" />}
       {error && <p className="error">{error}</p>}
       <p className="hint">
         El QR identifica la cuenta. Confirmá el nombre del alumno antes de
@@ -249,13 +251,7 @@ function ProductVisual({ p, small = false }) {
 export default function App() {
   const adminEntrance = isAdminEntrance(location.pathname);
   const orderRequest = useRef(newId());
-  const [session, setSession] = useState(() => {
-      try {
-        return JSON.parse(localStorage.getItem("recreo-session"));
-      } catch {
-        return null;
-      }
-    }),
+  const [session, setSession] = useState(null),
     [authLoading, setAuthLoading] = useState(configured),
     [authError, setAuthError] = useState(""),
     [data, setData] = useState(empty),
@@ -281,6 +277,19 @@ export default function App() {
     [orderActionError, setOrderActionError] = useState(""),
     [memberSearch, setMemberSearch] = useState(""),
     [schoolInfo, setSchoolInfo] = useState(null);
+  useAndroidBack(() => {
+    const dialogs = document.querySelectorAll("dialog[open]");
+    if (dialogs.length) { dialogs[dialogs.length - 1].dispatchEvent(new Event("cancel", { cancelable: true })); return true; }
+    if (mobileMenu) { setMobileMenu(false); return true; }
+    if (scan) { setScan(false); return true; }
+    if (orderScan) { setOrderScan(false); return true; }
+    if (checkout) { setCheckout(false); return true; }
+    if (modal) { setModal(null); return true; }
+    const home = session?.role === "superadmin" ? "platform" : "home";
+    if (page !== home) { setPage(home); setSearch(""); return true; }
+    if (!session && accessIntent) { chooseAccess(null); return true; }
+    return false;
+  });
   useEffect(() => {
     setOrderActionError("");
   }, [modal?.type, modal?.order?.id]);
@@ -291,19 +300,19 @@ export default function App() {
       call("getSchoolInfo", { code })
         .then(setSchoolInfo)
         .catch(() => {});
-    else {
-      const d = demoSnapshot("escuela-sol");
-      const school = d.kiosks.find((k) => k.code === code.toUpperCase());
-      if (school) setSchoolInfo(school);
-    }
+
   }, []);
   const staff = session && session.role !== "student",
-    demo = session?.mode === "demo",
     k = data.kiosk,
     me = data.members.find((m) => m.id === session?.uid),
     myOrders = data.orders.filter((o) => o.studentId === session?.uid),
     myMovements = data.movements.filter((m) => m.userId === session?.uid);
   const notify = (message, error = false) => setToast({ message, error });
+  useEffect(() => {
+    const handler = (event) => setToast({ message: event.detail, error: true });
+    window.addEventListener("rekreo:file-error", handler);
+    return () => window.removeEventListener("rekreo:file-error", handler);
+  }, []);
   useEffect(() => {
     if (toast) {
       const t = setTimeout(() => setToast(null), 6000);
@@ -317,7 +326,7 @@ export default function App() {
     async function finishLogin(user, attempt) {
       if (!user) {
         if (active && attempt === generation) {
-          setSession((current) => (current?.mode === "demo" ? current : null));
+          setSession(null);
           setAuthLoading(false);
         }
         return;
@@ -362,23 +371,15 @@ export default function App() {
     };
   }, []);
   useEffect(() => {
-    if (session?.mode === "demo")
-      localStorage.setItem("recreo-session", JSON.stringify(session));
-    else localStorage.removeItem("recreo-session");
-  }, [session]);
+    // Old local demo sessions are never restored as authenticated sessions.
+    try {
+      localStorage.removeItem("recreo-session");
+      localStorage.removeItem("recreo-demo-v1");
+    } catch {}
+  }, []);
   useEffect(() => {
     setData(empty);
     if (!session) return;
-    if (demo) {
-      const refresh = () => setData(demoSnapshot(session.kioskId));
-      refresh();
-      window.addEventListener("recreo-update", refresh);
-      window.addEventListener("storage", refresh);
-      return () => {
-        window.removeEventListener("recreo-update", refresh);
-        window.removeEventListener("storage", refresh);
-      };
-    }
     const stops = [];
     const fail = (e) =>
       notify(
@@ -484,16 +485,10 @@ export default function App() {
     }
     if (!options.background) setBusy(true);
     try {
-      const result = demo
-        ? await demoAction(
-            name,
-            { ...payload, kioskId: payload.kioskId || session.kioskId },
-            session,
-          )
-        : await call(name, {
-            ...payload,
-            kioskId: payload.kioskId || session.kioskId,
-          });
+      const result = await call(name, {
+        ...payload,
+        kioskId: payload.kioskId || session.kioskId,
+      });
       if (success) notify(success);
       return result ?? {};
     } catch (e) {
@@ -505,24 +500,13 @@ export default function App() {
       if (!options.background) setBusy(false);
     }
   }
-  function enter(role) {
-    setSession({
-      mode: "demo",
-      uid: role === "student" ? "student-1" : "staff-1",
-      name: role === "student" ? "Sofía Martínez" : "Ángel Sarmiento",
-      role,
-      kioskId: "escuela-sol",
-    });
-    setPage(role === "superadmin" ? "platform" : "home");
-    setModal(null);
-  }
   const go = (p) => {
     setPage(p);
     setSearch("");
     setMobileMenu(false);
   };
   async function logout() {
-    if (!demo && auth) await signOut(auth);
+    if (auth) await logoutAccount(auth);
     setSession(null);
     setCart({});
     setModal(null);
@@ -534,7 +518,7 @@ export default function App() {
     const f = new FormData(e.currentTarget);
     if (!configured) {
       notify(
-        "La conexión real todavía no está configurada. Podés explorar la demostración.",
+        "Falta configurar la conexión a Firebase. Contactá al administrador.",
         true,
       );
       return;
@@ -588,7 +572,7 @@ export default function App() {
   async function googleLogin() {
     if (!configured) {
       notify(
-        "Conectá Firebase para habilitar Google. La demo está disponible abajo.",
+        "Falta configurar Firebase para ingresar con Google.",
         true,
       );
       return;
@@ -597,14 +581,15 @@ export default function App() {
     setBusy(true);
     try {
       if (auth.currentUser) await signOut(auth);
-      await signInWithPopup(auth, new GoogleAuthProvider());
+      await loginGoogle(auth);
     } catch (e) {
       const message =
         e.code === "auth/popup-closed-by-user"
           ? "Se cerró la ventana de Google antes de terminar. Podés intentarlo nuevamente."
           : e.code === "auth/account-exists-with-different-credential"
             ? "Ingresá con tu contraseña y vinculá Google desde Mi credencial."
-            : accessErrorMessage(e);
+            : isAndroid && ["NOT_CONFIGURED", "GOOGLE_SIGN_IN_FAILED"].includes(e.code)
+              ? e.message : accessErrorMessage(e);
       setAuthError(message);
       notify(message, true);
     } finally {
@@ -644,7 +629,7 @@ export default function App() {
     e.preventDefault();
     const f = new FormData(e.currentTarget);
     let info;
-    if (!demo) {
+    {
       try {
         info = await call("getSchoolInfo", { code: f.get("code") });
       } catch (e) {
@@ -732,15 +717,9 @@ export default function App() {
         .replaceAll('"', '""')
         .replace(/^[=+@-]/, "'$&") +
       '"';
-    const blob = new Blob(
-      ["\uFEFF" + rows.map((r) => r.map(escape).join(";")).join("\r\n")],
-      { type: "text/csv;charset=utf-8" },
-    );
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = `recreo-movimientos-${localDate()}.csv`;
-    a.click();
-    URL.revokeObjectURL(a.href);
+    downloadFile(`recreo-movimientos-${localDate()}.csv`,
+      "\uFEFF" + rows.map((r) => r.map(escape).join(";")).join("\r\n"),
+      "text/csv;charset=utf-8");
   }
   const todayOrders = data.orders.filter((o) => o.date === localDate()),
     activeOrders = data.orders.filter(
@@ -922,7 +901,7 @@ export default function App() {
         <button className="button primary" onClick={logout}>
           Ingresar con otra cuenta
         </button>
-        <a className="text-button" href="/">
+        <a className="text-button" href={homeHref()}>
           Volver al acceso de alumnos y kioskeros
         </a>
       </main>
@@ -932,7 +911,7 @@ export default function App() {
       {!session ? (
         <main className="login-page">
           <section className="login-story">
-            <a className="brand" href="/">
+            <a className="brand" href={homeHref()}>
               <Brand />
             </a>
             <div>
@@ -1165,35 +1144,9 @@ export default function App() {
                   )}
                 </>
               )}
-              <div className="demo-entry">
-                <span>CONOCÉ EL SISTEMA</span>
-                <p>Explorá con datos de ejemplo. No se mueve dinero real.</p>
-                {!adminEntrance && (
-                  <div className="demo-buttons">
-                    <button onClick={() => enter("student")}>
-                      <ShoppingBag size={17} />
-                      Soy alumno
-                      <ArrowUpRight size={16} />
-                    </button>
-                    <button onClick={() => enter("owner")}>
-                      <Store size={17} />
-                      Soy kiosquero
-                      <ArrowUpRight size={16} />
-                    </button>
-                  </div>
-                )}
-                {adminEntrance && (
-                  <button
-                    className="text-button"
-                    onClick={() => enter("superadmin")}
-                  >
-                    Explorar administración con datos de ejemplo
-                  </button>
-                )}
-              </div>
               {!configured && (
                 <p className="connection-note">
-                  <i /> Versión de prueba · conexión a Firebase pendiente
+                  <i /> Conexión a Firebase pendiente
                 </p>
               )}
             </div>
@@ -1278,20 +1231,6 @@ export default function App() {
               ))}
             </nav>
             <div className="sidebar-bottom">
-              {demo && (
-                <div className="demo-switch">
-                  <span>EXPLORAR DEMOSTRACIÓN</span>
-                  <select
-                    aria-label="Cambiar perfil de demostración"
-                    value={session.role}
-                    onChange={(e) => enter(e.target.value)}
-                  >
-                    <option value="student">Vista alumno</option>
-                    <option value="owner">Vista kiosquero</option>
-                    <option value="superadmin">Vista administrador</option>
-                  </select>
-                </div>
-              )}
               <div className="profile">
                 <span className="avatar">
                   {session.name
@@ -1337,9 +1276,9 @@ export default function App() {
                 <b>{nav.find((x) => x[0] === page)?.[1]}</b>
               </div>
               <div className="topbar-right">
-                <span className={`connection ${demo ? "demo" : ""}`}>
+                <span className="connection">
                   <i />
-                  {demo ? "Demostración" : "Conectado"}
+                  Conectado
                 </span>
                 <span className="today">
                   <CalendarDays size={15} />
@@ -1351,17 +1290,6 @@ export default function App() {
                 <span className="avatar small-avatar">{session.name[0]}</span>
               </div>
             </header>
-            {demo && (
-              <div className="demo-banner">
-                <span>
-                  <FlaskIcon /> Estás probando el sistema. Los saldos y pedidos
-                  son de ejemplo y se guardan en este navegador.
-                </span>
-                <button onClick={() => setModal({ type: "resetDemo" })}>
-                  Reiniciar demo
-                </button>
-              </div>
-            )}
             <main className="content">
               {onboardingFor(session, session.accessIntent) ? (
                 <div className="join-card">
@@ -2217,15 +2145,12 @@ export default function App() {
                       </section>
                     </>
                   )}
-                  {page === "account" && !demo && (
+                  {page === "account" && (
                     <button
                       className="button secondary"
                       onClick={async () => {
                         try {
-                          await linkWithPopup(
-                            auth.currentUser,
-                            new GoogleAuthProvider(),
-                          );
+                          await linkGoogle(auth.currentUser);
                           notify(
                             "Google vinculado a tu cuenta actual. Conservás saldo e historial.",
                           );
@@ -2318,9 +2243,7 @@ export default function App() {
                 reKreo. <span>Un recreo más simple.</span>
               </span>
               <span>
-                {demo
-                  ? "Entorno de demostración"
-                  : "Kioscos escolares conectados"}
+                Kioscos escolares conectados
               </span>
             </footer>
           </div>
@@ -2467,6 +2390,14 @@ export default function App() {
         <ProductForm
           product={modal.product}
           images={data.images}
+          imageLimit={data.kiosk?.limits?.images ?? 100}
+          photoContext={`${session.uid}:${session.kioskId}`}
+          onUploadPhoto={async (file) => {
+            const blob = await compressImage(file);
+            const image = await uploadImage(blob, file.name, session.kioskId);
+            notify("Foto guardada en tu galería y seleccionada para el producto");
+            return image;
+          }}
           busy={busy}
           onClose={() => setModal(null)}
           onGallery={() => {
@@ -2877,26 +2808,6 @@ export default function App() {
           </form>
         </Modal>
       )}
-      {modal?.type === "resetDemo" && (
-        <Modal title="Reiniciar demostración" onClose={() => setModal(null)}>
-          <p>
-            Se borrarán solo los cambios de prueba guardados en este navegador.
-          </p>
-          <button
-            className="button primary full"
-            onClick={() => {
-              resetDemo();
-              setSession((s) => ({ ...s, kioskId: "escuela-sol" }));
-              setCart({});
-              setModal(null);
-              go("home");
-              notify("Demostración reiniciada");
-            }}
-          >
-            Reiniciar datos de ejemplo
-          </button>
-        </Modal>
-      )}
       {modal?.type === "reset" && (
         <Modal title="Recuperar acceso" onClose={() => setModal(null)}>
           <form
@@ -2929,9 +2840,6 @@ export default function App() {
       )}
     </>
   );
-}
-function FlaskIcon() {
-  return <span aria-hidden="true">◈</span>;
 }
 function Stat({ label, value, icon: Icon, foot, tone }) {
   return (

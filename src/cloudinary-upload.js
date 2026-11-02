@@ -36,11 +36,12 @@ export async function uploadToCloudinary({
     }
     uploaded = true;
     try {
-      return await call("finalizeImage", {
+      const result = await call("finalizeImage", {
         kioskId,
         imageId: reservation.imageId,
         asset,
       });
+      return { ...result, url: asset.secure_url, publicId: asset.public_id, name, status: "active" };
     } catch (error) {
       error.message +=
         " La carga quedó pendiente. Revisá Cloudinary antes de eliminar la reserva.";

@@ -14,7 +14,11 @@ export function readAccessIntent(storage) {
   }
 }
 export function isAdminEntrance(pathname) {
-  return pathname.replace(/\/+$/, "") === "/superadmin";
+  const path = pathname.replace(/\/+$/, "");
+  const publicUrl = process.env.REACT_APP_PUBLIC_APP_URL;
+  let base = "";
+  try { base = publicUrl ? new URL(publicUrl).pathname.replace(/\/+$/, "") : ""; } catch {}
+  return path === "/superadmin" || path === `${base}/superadmin`;
 }
 export function canAccessAdmin(session) {
   return session?.role === "superadmin";
