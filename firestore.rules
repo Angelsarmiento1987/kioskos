@@ -22,6 +22,20 @@ service cloud.firestore {
    allow create: if superadmin() || profileValid(uid);
    allow update: if superadmin() || (profileValid(uid) && resource.data.get('rol','alumno') != 'superadmin' && resource.data.get('activo',true) != false && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['email','rol','kioskId','kioskIds']));
   }
+  // Read receipts belong to the student. Financial history remains authoritative.
+  match /usuarios/{uid}/noticeReads/{receiptId} {
+    function own() { return signedIn() && uid == request.auth.uid; }
+    function valid() {
+      let d = request.resource.data;
+      return own() && d.keys().hasOnly(['kioskId','noticeId','readAt'])
+        && d.kioskId is string && d.kioskId.size() > 0 && d.kioskId.size() <= 128
+        && d.noticeId is string && d.noticeId.size() > 0 && d.noticeId.size() <= 160
+        && receiptId == d.kioskId + '--' + d.noticeId && d.readAt == request.time
+        && get(/databases/$(database)/documents/kiosks/$(d.kioskId)/members/$(uid)).data.role == 'student';
+    }
+    allow get,list: if own();
+    allow create,update: if valid();
+  }
   match /clients/{k} { allow read,write: if superadmin(); }
   match /ownerEmails/{mail} { allow get: if superadmin() || (signedIn() && email() == mail); allow list,write: if superadmin(); }
   match /staffEmails/{mail} {

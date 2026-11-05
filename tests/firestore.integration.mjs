@@ -1,3 +1,5 @@
+import { studentNotices, noticeReadId } from "../shared/student-notices.mjs";
+import { createOrderMonitor } from "../shared/order-alerts.mjs";
 // Integration tests use only local emulators. Admin SDK is seed/inspection only;
 // every app action runs through the browser SDK and real Firestore Rules.
 import assert from "node:assert/strict";
@@ -6,9 +8,12 @@ import {
   getAuth,
   connectAuthEmulator,
   createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
 } from "firebase/auth";
 import {
   getFirestore,
+  collection,
+  onSnapshot,
   connectFirestoreEmulator,
   doc,
   setDoc,
@@ -35,6 +40,7 @@ const seedApp = adminApp({ projectId: "demo-rekreo" }),
 const testDate = localDate(new Date(Date.now() + 86400000));
 const salt = Date.now(),
   clients = [];
+let stopOrderAlerts = () => {};
 let count = 0;
 const ok = (text) => console.log("✓ " + ++count + " " + text);
 async function user(name, verified = true) {
@@ -219,6 +225,22 @@ try {
   ok(
     "Catalog counter is atomic; kiosk public name does not change private client reference",
   );
+  const monitor = createOrderMonitor(), arrivals = [];
+  let baselineReady, arrivalReady;
+  const baselinePromise = new Promise((resolve) => { baselineReady = resolve; });
+  const arrivalPromise = new Promise((resolve) => { arrivalReady = resolve; });
+  stopOrderAlerts = onSnapshot(collection(owner.db, "kiosks", kid, "orders"), { includeMetadataChanges: true }, (snapshot) => {
+    const rows = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
+    arrivals.push(...monitor.accept(rows, snapshot.metadata));
+    if (!snapshot.metadata.fromCache && !snapshot.metadata.hasPendingWrites) baselineReady();
+    if (arrivals.length) arrivalReady();
+  });
+  async function awaitAlertStep(promise) {
+    let timeout;
+    try { await Promise.race([promise, new Promise((_, reject) => { timeout = setTimeout(() => reject(Error("Order listener timeout")), 15000); })]); }
+    finally { clearTimeout(timeout); }
+  }
+  await awaitAlertStep(baselinePromise);
   const order = await s1.call(
     "placeOrder",
     data({
@@ -250,6 +272,10 @@ try {
   ok(
     "Student purchase atomically debits wallet, stock, capacity and ledger once",
   );
+  await awaitAlertStep(arrivalPromise);
+  assert.deepEqual(arrivals.map((row) => row.id), [order.id]);
+  stopOrderAlerts();
+  ok("The kiosk listener alerts once for a committed student order, without alerting on initial history or an idempotent retry");
   await assert.rejects(
     s1.call(
       "topup",
@@ -425,6 +451,30 @@ try {
     100000,
   );
   ok("The kiosk owner can cancel and refund a student order");
+
+  const cancelled = await getDoc(doc(s2.db, "kiosks", kid, "orders", staffCancelled.id));
+  const refunded = await getDoc(doc(s2.db, "kiosks", kid, "movements", "refund-" + staffCancelled.id));
+  const news = studentNotices(s2.uid, [{ id: cancelled.id, ...cancelled.data() }], [{ id: refunded.id, ...refunded.data() }]);
+  assert.equal(news.length, 1);
+  assert.match(news[0].message, /Se reintegraron/);
+  const receiptId = noticeReadId(kid, news[0].id);
+  const receipt = doc(s2.db, "usuarios", s2.uid, "noticeReads", receiptId);
+  await setDoc(receipt, { kioskId: kid, noticeId: news[0].id, readAt: serverTimestamp() });
+  assert.equal((await getDoc(receipt)).data().noticeId, news[0].id);
+  // A fresh SDK instance for the same account simulates another phone / reopening the app.
+  const otherApp = initializeApp({ projectId: "demo-rekreo", apiKey: "demo-key", appId: "demo-app" }, "same-student-second-device" + salt);
+  const otherAuth = getAuth(otherApp); connectAuthEmulator(otherAuth, "http://127.0.0.1:9099", { disableWarnings: true });
+  const otherDb = getFirestore(otherApp); connectFirestoreEmulator(otherDb, "127.0.0.1", 8080);
+  await signInWithEmailAndPassword(otherAuth, s2.email, "test-pass-123");
+  const restored = await getDoc(doc(otherDb, "usuarios", s2.uid, "noticeReads", receiptId));
+  assert.equal(restored.exists(), true);
+  await terminate(otherDb); await deleteApp(otherApp);
+  await assert.rejects(getDoc(doc(s1.db, "usuarios", s2.uid, "noticeReads", receiptId)));
+  await assert.rejects(setDoc(doc(s1.db, "usuarios", s2.uid, "noticeReads", receiptId), { kioskId: kid, noticeId: news[0].id, readAt: serverTimestamp() }));
+  await assert.rejects(setDoc(receipt, { kioskId: kid, noticeId: news[0].id, readAt: serverTimestamp(), balance: 9999 }));
+  await assert.rejects(setDoc(doc(s2.db, "usuarios", s2.uid, "noticeReads", "fake--ready-o1"), { kioskId: "fake", noticeId: "ready-o1", readAt: serverTimestamp() }));
+  ok("Student sees a committed cancellation/refund, read status persists on another device, and foreign/malformed receipts are denied");
+
 
   const sale = await owner.call(
     "createCounterSale",
@@ -624,6 +674,7 @@ try {
   ok("Concurrent purchases cannot both take the last stock unit");
   console.log(`Passed ${count} direct-client integration checks`);
 } finally {
+  stopOrderAlerts();
   for (const c of clients) {
     await terminate(c.db);
     await deleteApp(c.app);

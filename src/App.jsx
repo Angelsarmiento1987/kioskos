@@ -1,3 +1,10 @@
+import { useStudentNotices } from "./useStudentNotices.js";
+import StudentNotices, { StudentNoticeBanner } from "./components/StudentNotices";
+import { createOrderMonitor } from "../shared/order-alerts.mjs";
+import { useOrderAlerts } from "./useOrderAlerts.js";
+import { OrderAlertControl, NewOrdersNotice } from "./components/OrderAlerts";
+import { useTheme } from "./theme.js";
+import ThemeControl from "./components/ThemeControl";
 import { compressImage, uploadImage } from "./images.js";
 import { isAndroid, loginGoogle, linkGoogle, logoutAccount, homeHref } from "./native";
 import NativeQrButton from "./components/NativeQrButton";
@@ -302,6 +309,13 @@ export default function App() {
         .catch(() => {});
 
   }, []);
+  const appearance = useTheme();
+  const alertScope = session?.kioskId && ["owner", "staff"].includes(session.role) ? `${session.uid}:${session.kioskId}` : null;
+  const alerts = useOrderAlerts(alertScope);
+  const [noticeData, setNoticeData] = useState({ scope: null, orders: [], movements: [] });
+  const notices = useStudentNotices(session, noticeData.scope === `${session?.uid}:${session?.kioskId}` ? noticeData : { orders: [], movements: [] });
+  const [noticesOpen, setNoticesOpen] = useState(false);
+  useEffect(() => setNoticesOpen(false), [session?.uid, session?.kioskId]);
   const staff = session && session.role !== "student",
     k = data.kiosk,
     me = data.members.find((m) => m.id === session?.uid),
@@ -379,8 +393,10 @@ export default function App() {
   }, []);
   useEffect(() => {
     setData(empty);
+    setNoticeData({ scope: session ? `${session.uid}:${session.kioskId}` : null, orders: [], movements: [] });
     if (!session) return;
     const stops = [];
+    const monitor = createOrderMonitor();
     const fail = (e) =>
       notify(
         e.code === "permission-denied"
@@ -450,8 +466,14 @@ export default function App() {
       stops.push(
         onSnapshot(
           q,
+          { includeMetadataChanges: ["orders", "movements"].includes(name) },
           (s) => {
             const rows = s.docs.map((x) => ({ id: x.id, ...x.data() }));
+            if (session.role === "student" && ["orders", "movements"].includes(name) && !s.metadata.hasPendingWrites) setNoticeData(d => ({ ...d, scope: `${session.uid}:${session.kioskId}`, [name]: rows }));
+            if (name === "orders" && alertScope) {
+              alerts.receive(monitor.accept(rows, s.metadata));
+              if (!s.metadata.fromCache && !s.metadata.hasPendingWrites) alerts.reconcile(rows);
+            }
             if (name === "orders" || name === "movements")
               rows.sort((a, b) => ts(b.createdAt) - ts(a.createdAt));
             setData((d) => ({ ...d, [name]: rows }));
@@ -862,6 +884,7 @@ export default function App() {
   if (adminEntrance && session && !canAccessAdmin(session))
     return (
       <main className="restricted-access">
+        <ThemeControl {...appearance} floating />
         <Brand />
         <span className="feature-icon">
           <ShieldCheck />
@@ -910,6 +933,7 @@ export default function App() {
     <>
       {!session ? (
         <main className="login-page">
+          <ThemeControl {...appearance} floating />
           <section className="login-story">
             <a className="brand" href={homeHref()}>
               <Brand />
@@ -1276,6 +1300,9 @@ export default function App() {
                 <b>{nav.find((x) => x[0] === page)?.[1]}</b>
               </div>
               <div className="topbar-right">
+                {alertScope && <OrderAlertControl alerts={alerts} />}
+                {session.role === "student" && session.kioskId && <StudentNotices notices={notices} open={noticesOpen} onOpen={() => setNoticesOpen(true)} onClose={() => setNoticesOpen(false)} onNavigate={go} />}
+                <ThemeControl {...appearance} />
                 <span className="connection">
                   <i />
                   Conectado
@@ -1291,6 +1318,9 @@ export default function App() {
               </div>
             </header>
             <main className="content">
+              {alertScope && <NewOrdersNotice alerts={alerts} onOpen={() => go("orders")} />}
+              {session.role === "student" && session.kioskId && <StudentNoticeBanner notices={notices} onOpen={() => setNoticesOpen(true)} />}
+              {alertScope && ["home", "orders"].includes(page) && <aside className="live-orders-help"><Bell size={18}/><p><b>Recepción de pedidos en vivo.</b> Dejá el panel abierto en una notebook con internet, sin suspensión, y activá el sonido. Podés usar el celular con esta misma cuenta para escanear QR, cargar saldo y entregar pedidos.</p></aside>}
               {onboardingFor(session, session.accessIntent) ? (
                 <div className="join-card">
                   <span className="feature-icon">
@@ -2843,7 +2873,7 @@ export default function App() {
 }
 function Stat({ label, value, icon: Icon, foot, tone }) {
   return (
-    <section className="stat-card">
+    <section className={`stat-card tone-${tone || "mint"}`}>
       <div>
         <span>{label}</span>
         <span className={`stat-icon ${tone}`}>

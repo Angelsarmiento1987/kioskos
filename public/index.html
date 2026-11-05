@@ -3,6 +3,14 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <script>
+      try {
+        var choice = localStorage.getItem("rekreo-theme");
+        var mode = choice === "dark" || choice === "light" ? choice : (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+        document.documentElement.dataset.theme = mode;
+        document.documentElement.style.colorScheme = mode;
+      } catch (_) {}
+    </script>
     <meta name="theme-color" content="#123d32" />
     <meta
       name="description"

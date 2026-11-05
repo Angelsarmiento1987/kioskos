@@ -77,7 +77,7 @@ export function Metric({
   tone = "mint",
 }) {
   return (
-    <section className="stat-card">
+    <section className={`stat-card tone-${tone}`}>
       <div>
         <span>{label}</span>
         <span className={"stat-icon " + tone}>

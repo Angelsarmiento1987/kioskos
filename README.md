@@ -1,5 +1,7 @@
 # reKreo · proyecto único para web y Android
 
+**Actualización 1.4:** avisos persistentes para el alumno y recepción con alarma en la notebook. **Sin Blaze, push ni Functions.** Ver [AVISOS-SIN-BLAZE.md](AVISOS-SIN-BLAZE.md) para actualizar, publicar las reglas y probar en dos equipos.
+
 React + Capacitor 8 + Firebase Auth/Firestore + Cloudinary. El código de pantallas y lógica está en `src/`; Android Studio empaqueta su compilación desde `android/`. No se agrega un servidor propio ni Firebase Functions.
 
 ## Incorporar esta actualización

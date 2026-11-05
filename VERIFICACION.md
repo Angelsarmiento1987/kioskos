@@ -1,20 +1,23 @@
-# Verificación · 2 de noviembre de 2026
+# Verificación · reKreo 1.4
 
-- Se usaron el proyecto web original y la carpeta Android subidos por el usuario.
-- Se conservaron Firebase, Cloudinary, URL de GitHub Pages, paquete Android y configuración Google Android del usuario.
-- `npm test`: 60 pruebas aprobadas, incluyendo la conversión de fotos nativas, cancelación, tipo MIME genérico Android, respuesta de Cloudinary utilizable en el producto y los controles de acceso/negocio existentes.
-- `npm run test:firestore`: 20 verificaciones aprobadas con emuladores Auth/Firestore. Incluyen carga única, saldo, stock, cobro QR, cuotas y compras concurrentes de última unidad. No se modificaron reglas ni datos de producción.
-- `npm run android:sync`: compilación React correcta, configuración Google extraída del archivo suministrado y cuatro plugins Android sincronizados (App, Camera, Filesystem y Share), además del plugin local RekreoNative.
-- Las pantallas de demostración y sus operaciones no se incluyen en el código de producción; los fixtures siguen disponibles solo para pruebas.
-- No se generó un APK/AAB ni se probó la cámara real en este entorno: no tiene SDK Android/JDK 21. La nueva compilación debe probarse en el mismo teléfono donde funcionó la versión anterior.
-- No se pudo ejecutar la prueba visual interactiva del formulario en este entorno: no hay un navegador local disponible y el navegador remoto no puede alcanzar el servidor local. Se verificó la compilación del formulario, pero no se afirma haber probado la captura visual ni la interacción de cámara.
+## Cambios verificados
 
-## Prueba rápida en el celular
+- Se retiró la integración de push de la entrega anterior: no hay plugin FCM, emisor, credenciales administrativas ni funciones configuradas. Se conserva la arquitectura React + Firestore con reglas, Auth y Cloudinary. No se habilitó Blaze ni se cambió producción.
+- Se mantuvieron alarmas del kiosquero, colores, modo oscuro, cámara y QR. La notebook recibe pedidos en vivo con el panel abierto y sonido habilitado; el teléfono conserva todas sus funciones.
+- Avisos del alumno derivados de pedidos y movimientos existentes. Cancelación/reintegro del mismo pedido comparten identificador para evitar dos avisos por el mismo hecho. Solo se incorporan a la bandeja snapshots sin escrituras pendientes. Un pedido listo deja de invitar al retiro al cerrarse/entregarse.
+- Marcadores privados de lectura persistentes por alumno/kiosko. Lectura individual o múltiple, errores visibles y acceso a pedidos/movimientos. No modifican operaciones financieras.
+- `npm test`: **73 pruebas aprobadas**. Incluyen deduplicación de cancelación/reintegro, identidad, estados de preparación, devoluciones externas y separación de marcadores por kiosko/estado.
+- `npm run test:firestore`: **22 verificaciones aprobadas** usando solo los emuladores locales de Auth/Firestore y reglas reales. Nueva comprobación con cancelación del kiosquero: el alumno lee el reintegro confirmado y su marcador se recupera desde otra instancia autenticada; acceso ajeno, campos adicionales y kiosko sin membresía son rechazados.
+- `npm run android:sync`: compilación React y sincronización correctas con los cuatro plugins App, Camera, Filesystem y Share, además del plugin local de Google/QR.
+- Android conserva paquete `com.websinvueltas.rekreo` y configuración Firebase del usuario. Nueva versión: `versionCode 5`, `versionName 1.4.0`.
 
-1. Abrir el proyecto original ya actualizado y ejecutar `npm install` y `npm run android:sync`.
-2. Instalar una nueva compilación desde Android Studio y comprobar Google y email/contraseña.
-3. Crear un producto, escribir nombre/precio/stock y sacar una foto. Comprobar que los campos se conservan y que queda la foto seleccionada. Guardar y consultar desde la web.
-4. Cancelar una captura: no debe aparecer otra imagen ni crecer el cupo.
-5. Reutilizar una imagen existente: no debe crecer el cupo. Con cupo completo, las acciones de foto nueva deben quedar deshabilitadas y las existentes seleccionables.
-6. Probar archivo inválido/error de conexión y verificar que se muestra el error sin cerrar el formulario ni dar una subida fallida por completada.
-7. Confirmar que no aparece la demostración ni se recupera una vieja sesión de ejemplo.
+## Alcance y pendientes
+
+- No se compiló ni firmó APK/AAB en este entorno: falta SDK Android/JDK 21. Debe probarse la actualización en el teléfono y en la notebook reales. No se afirma haber verificado el sonido físico ni push.
+- No se probaron visualmente las nuevas pantallas en un navegador en esta entrega; la revisión de claro/oscuro de la versión anterior no sustituye esa prueba.
+- Hay que publicar `firestore.rules` para guardar/sincronizar la lectura. No se publicaron reglas ni se modificaron datos reales desde este entorno.
+- No hay avisos de sistema con app cerrada. El alumno encuentra los avisos al abrir y sincronizar. El kiosquero revisa pendientes al iniciar el turno: cargar historial no genera alarma retroactiva.
+- Los avisos usan el historial existente; borrar administrativamente pedidos/movimientos también afecta su disponibilidad. No hay una segunda copia independiente de esos datos.
+- Spark conserva sus cuotas; esta entrega no implica uso ilimitado ni exige ampliar el plan.
+
+Instalación, limpieza del ZIP anterior y prueba funcional: `AVISOS-SIN-BLAZE.md`.
